@@ -128,3 +128,18 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Log
+log/
+
+# Checkpoint weight binary
+checkpoint/
+
+# All numpy array file
+**/*.npy
+**/*.npz
+
+# Media File
+**/*.gif
+**/*.jpg
+**/*.mp4
