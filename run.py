@@ -34,6 +34,8 @@ from common.utils import *
 from common.logging import Logger
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
+from common.h36m_dataset import h36m_metadata,h36m_skeleton
+from common.coco_dataset import coco_h36m
 
 #cudnn.benchmark = True       
 torch.backends.cudnn.deterministic = True
@@ -111,10 +113,10 @@ for subject in dataset.subjects():
 
 print('Loading 2D detections...')
 keypoints = np.load('data/data_2d_' + args.dataset + '_' + args.keypoints + '.npz', allow_pickle=True)
-keypoints_metadata = keypoints['metadata'].item()
+keypoints_metadata = h36m_metadata
 keypoints_symmetry = keypoints_metadata['keypoints_symmetry']
 kps_left, kps_right = list(keypoints_symmetry[0]), list(keypoints_symmetry[1])
-joints_left, joints_right = list(dataset.skeleton().joints_left()), list(dataset.skeleton().joints_right())
+joints_left, joints_right = list(h36m_skeleton.joints_left()), list(h36m_skeleton.joints_right())
 keypoints = keypoints['positions_2d'].item()
 
 ###################
@@ -643,7 +645,7 @@ if not args.evaluate:
 # Training end
 
 # Evaluate
-def evaluate(test_generator, action=None, return_predictions=False, use_trajectory_model=False, newmodel=None):
+def evaluate(test_generator, action=None, return_predictions=False, use_trajectory_model=False, newmodel=None,no_gt=False):
     epoch_loss_3d_pos = 0
     epoch_loss_3d_pos_procrustes = 0
     epoch_loss_3d_pos_scale = 0
@@ -677,7 +679,8 @@ def evaluate(test_generator, action=None, return_predictions=False, use_trajecto
         N = 0
         for _, batch, batch_2d in test_generator.next_epoch():
             inputs_2d = torch.from_numpy(batch_2d.astype('float32'))
-            inputs_3d = torch.from_numpy(batch.astype('float32'))
+            if batch is not None:
+                inputs_3d = torch.from_numpy(batch.astype('float32'))
 
 
             ##### apply test-time-augmentation (following Videopose3d)
@@ -686,26 +689,47 @@ def evaluate(test_generator, action=None, return_predictions=False, use_trajecto
             inputs_2d_flip[:, :, kps_left + kps_right,:] = inputs_2d_flip[:, :, kps_right + kps_left,:]
 
             ##### convert size
-            inputs_3d_p = inputs_3d
-            if newmodel is not None:
-                def eval_data_prepare_pf(receptive_field, inputs_2d, inputs_3d):
-                    inputs_2d_p = torch.squeeze(inputs_2d)
-                    inputs_3d_p = inputs_3d.permute(1,0,2,3)
-                    padding = int(receptive_field//2)
-                    inputs_2d_p = rearrange(inputs_2d_p, 'b f c -> f c b')
-                    inputs_2d_p = F.pad(inputs_2d_p, (padding,padding), mode='replicate')
-                    inputs_2d_p = rearrange(inputs_2d_p, 'f c b -> b f c')
-                    out_num = inputs_2d_p.shape[0] - receptive_field + 1
-                    eval_input_2d = torch.empty(out_num, receptive_field, inputs_2d_p.shape[1], inputs_2d_p.shape[2])
-                    for i in range(out_num):
-                        eval_input_2d[i,:,:,:] = inputs_2d_p[i:i+receptive_field, :, :]
-                    return eval_input_2d, inputs_3d_p
-                
-                inputs_2d, inputs_3d = eval_data_prepare_pf(81, inputs_2d, inputs_3d_p)
-                inputs_2d_flip, _ = eval_data_prepare_pf(81, inputs_2d_flip, inputs_3d_p)
+            if no_gt:
+                if newmodel is not None:
+                    def eval_data_prepare_pf2(receptive_field, inputs_2d):
+                        inputs_2d_p = torch.squeeze(inputs_2d)
+                        padding = int(receptive_field//2)
+                        inputs_2d_p = rearrange(inputs_2d_p, 'b f c -> f c b')
+                        inputs_2d_p = F.pad(inputs_2d_p, (padding,padding), mode='replicate')
+                        inputs_2d_p = rearrange(inputs_2d_p, 'f c b -> b f c')
+                        out_num = inputs_2d_p.shape[0] - receptive_field + 1
+                        eval_input_2d = torch.empty(out_num, receptive_field, inputs_2d_p.shape[1], inputs_2d_p.shape[2])
+                        for i in range(out_num):
+                            eval_input_2d[i,:,:,:] = inputs_2d_p[i:i+receptive_field, :, :]
+                        return eval_input_2d
+                    
+                    inputs_2d = eval_data_prepare_pf2(81, inputs_2d)
+                    inputs_2d_flip = eval_data_prepare_pf2(81, inputs_2d_flip)
+                else:
+                    fake_3d = torch.from_numpy(np.empty((inputs_2d.shape[0],inputs_2d.shape[1],17,3)))
+                    inputs_2d, inputs_3d = eval_data_prepare(receptive_field, inputs_2d, fake_3d)
+                    inputs_2d_flip, _ = eval_data_prepare(receptive_field, inputs_2d_flip, fake_3d)
             else:
-                inputs_2d, inputs_3d = eval_data_prepare(receptive_field, inputs_2d, inputs_3d_p)
-                inputs_2d_flip, _ = eval_data_prepare(receptive_field, inputs_2d_flip, inputs_3d_p)
+                inputs_3d_p = inputs_3d
+                if newmodel is not None:
+                    def eval_data_prepare_pf(receptive_field, inputs_2d, inputs_3d):
+                        inputs_2d_p = torch.squeeze(inputs_2d)
+                        inputs_3d_p = inputs_3d.permute(1,0,2,3)
+                        padding = int(receptive_field//2)
+                        inputs_2d_p = rearrange(inputs_2d_p, 'b f c -> f c b')
+                        inputs_2d_p = F.pad(inputs_2d_p, (padding,padding), mode='replicate')
+                        inputs_2d_p = rearrange(inputs_2d_p, 'f c b -> b f c')
+                        out_num = inputs_2d_p.shape[0] - receptive_field + 1
+                        eval_input_2d = torch.empty(out_num, receptive_field, inputs_2d_p.shape[1], inputs_2d_p.shape[2])
+                        for i in range(out_num):
+                            eval_input_2d[i,:,:,:] = inputs_2d_p[i:i+receptive_field, :, :]
+                        return eval_input_2d, inputs_3d_p
+                    
+                    inputs_2d, inputs_3d = eval_data_prepare_pf(81, inputs_2d, inputs_3d_p)
+                    inputs_2d_flip, _ = eval_data_prepare_pf(81, inputs_2d_flip, inputs_3d_p)
+                else:
+                    inputs_2d, inputs_3d = eval_data_prepare(receptive_field, inputs_2d, inputs_3d_p)
+                    inputs_2d_flip, _ = eval_data_prepare(receptive_field, inputs_2d_flip, inputs_3d_p)
 
             # if newmodel is not None:
             #     bi, ti, ni, _ = inputs_2d.shape
@@ -716,9 +740,10 @@ def evaluate(test_generator, action=None, return_predictions=False, use_trajecto
             if torch.cuda.is_available():
                 inputs_2d = inputs_2d.cuda()
                 inputs_2d_flip = inputs_2d_flip.cuda()
-                inputs_3d = inputs_3d.cuda()
-                
-            inputs_3d[:, :, 0] = 0
+                if no_gt is False:
+                    inputs_3d = inputs_3d.cuda()
+            if no_gt is False:   
+                inputs_3d[:, :, 0] = 0
             
             predicted_3d_pos = model_eval(inputs_2d)
             predicted_3d_pos_flip = model_eval(inputs_2d_flip)
@@ -735,6 +760,7 @@ def evaluate(test_generator, action=None, return_predictions=False, use_trajecto
             if return_predictions:
                 return predicted_3d_pos.squeeze().cpu().numpy()
 
+            # 计算错误
             error = mpjpe(predicted_3d_pos, inputs_3d)
 
             # error, joints_err = mpjpe(predicted_3d_pos, inputs_3d, return_joints_err=True)
@@ -774,6 +800,7 @@ if args.render:
     print('Rendering...')
 
     input_keypoints = keypoints[args.viz_subject][args.viz_action][args.viz_camera].copy()
+    input_keypoints,valid_frame = coco_h36m(input_keypoints)
     ground_truth = None
     if args.viz_subject in dataset.subjects() and args.viz_action in dataset[args.viz_subject]:
         if 'positions_3d' in dataset[args.viz_subject][args.viz_action]:
@@ -781,10 +808,14 @@ if args.render:
     if ground_truth is None:
         print('INFO: this action is unlabeled. Ground truth will not be rendered.')
 
-    gen = UnchunkedGenerator_Seq(None, [ground_truth], [input_keypoints],
+    # print(f"DEBUG: ground_truth: {ground_truth};input_keypoints: {input_keypoints}")
+    # gen = UnchunkedGenerator_Seq(None, [ground_truth], [input_keypoints],
+    #                          pad=pad, causal_shift=causal_shift, augment=args.test_time_augmentation,
+    #                          kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, joints_right=joints_right)
+    gen = UnchunkedGenerator_Seq(None, None, [input_keypoints],
                              pad=pad, causal_shift=causal_shift, augment=args.test_time_augmentation,
                              kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, joints_right=joints_right)
-    prediction = evaluate(gen, return_predictions=True)
+    prediction = evaluate(gen, return_predictions=True,no_gt=True)
     if args.compare:
         from common.model_poseformer import PoseTransformer
         model_pf = PoseTransformer(num_frame=81, num_joints=17, in_chans=2, num_heads=8, mlp_ratio=2., qkv_bias=False, qk_scale=None,drop_path_rate=0.1)
@@ -809,6 +840,12 @@ if args.render:
     #     prediction_traj = evaluate(gen, return_predictions=True, use_trajectory_model=True)
     #     prediction += prediction_traj
     ### reshape prediction as ground truth
+    have_ground_truth = True
+    if ground_truth is None:
+        have_ground_truth = False
+        print("WARNING: Use Fake ground truth")
+        ground_truth = np.zeros((input_keypoints.shape[0],17,3))
+    
     if ground_truth.shape[0] / receptive_field > ground_truth.shape[0] // receptive_field: 
         batch_num = (ground_truth.shape[0] // receptive_field) +1
         prediction2 = np.empty_like(ground_truth)
@@ -826,7 +863,7 @@ if args.render:
         np.save(args.viz_export, prediction)
 
     if args.viz_output is not None:
-        if ground_truth is not None:
+        if ground_truth is not None and have_ground_truth:
             # Reapply trajectory
             trajectory = ground_truth[:, :1]
             ground_truth[:, 1:] += trajectory
@@ -836,7 +873,7 @@ if args.render:
 
         # Invert camera transformation
         cam = dataset.cameras()[args.viz_subject][args.viz_camera]
-        if ground_truth is not None:
+        if ground_truth is not None and have_ground_truth:
             if args.compare:
                 prediction_pf = camera_to_world(prediction_pf, R=cam['orientation'], t=cam['translation'])
             prediction = camera_to_world(prediction, R=cam['orientation'], t=cam['translation'])
@@ -851,7 +888,7 @@ if args.render:
             if args.compare:
                 prediction_pf = camera_to_world(prediction_pf, R=rot, t=0)
                 prediction_pf[:, :, 2] -= np.min(prediction_pf[:, :, 2])
-            prediction = camera_to_world(prediction, R=rot, t=0)
+            prediction = camera_to_world(prediction.astype(np.float32), R=rot, t=0)
             # We don't have the trajectory, but at least we can rebase the height
             prediction[:, :, 2] -= np.min(prediction[:, :, 2])
         
@@ -863,7 +900,7 @@ if args.render:
             anim_output = {'Reconstruction': prediction}
             # anim_output = {'Reconstruction': ground_truth + np.random.normal(loc=0.0, scale=0.1, size=[ground_truth.shape[0], 17, 3])}
         
-        if ground_truth is not None and not args.viz_no_ground_truth:
+        if ground_truth is not None and not args.viz_no_ground_truth and have_ground_truth:
             anim_output['Ground truth'] = ground_truth
 
         input_keypoints = image_coordinates(input_keypoints[..., :2], w=cam['res_w'], h=cam['res_h'])

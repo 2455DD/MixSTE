@@ -41,6 +41,8 @@ def read_video(filename, skip=0, limit=-1):
                '-i', filename,
                '-f', 'image2pipe',
                '-pix_fmt', 'rgb24',
+               '-hide_banner',
+               '-loglevel','warning',
                '-vsync', '0',
                '-vcodec', 'rawvideo', '-']
 
@@ -207,7 +209,8 @@ def render_animation(keypoints, keypoints_metadata, poses, skeleton, fps, bitrat
                                                [pos[j, 1], pos[j_parent, 1]],
                                                [pos[j, 2], pos[j_parent, 2]], zdir='z', c=col))
             # Plot 2D keypoints
-            points = ax_in.scatter(*keypoints[i].T, 10, color=colors_2d, edgecolors='white', zorder=10)
+            # points = ax_in.scatter(*keypoints[i].T, 10, color=colors_2d, edgecolors='white', zorder=10)
+            points = ax_in.scatter(*keypoints[i].T, color=colors_2d, edgecolors='white', zorder=10)
 
             initialized = True
         else:

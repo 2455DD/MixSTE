@@ -1,8 +1,17 @@
 import numpy as np
 import copy
 from common.skeleton import Skeleton
-from common.mocap_dataset import MocapDataset
+from common.mocap_dataset import MocapDataset,StaticMocapDataset
 from common.camera import normalize_screen_coordinates, image_coordinates
+
+h36m_metadata = {
+    'layout_name': 'h36m',
+    'num_joints': 17,
+    'keypoints_symmetry': [
+        [4, 5, 6, 11, 12, 13],
+        [1, 2, 3, 14, 15, 16],
+    ]
+}
 
 h36m_skeleton = Skeleton(parents=[-1,  0,  1,  2,  3,  4,  0,  6,  7,  8,  9,  0, 11, 12, 13, 14, 12,
        16, 17, 18, 19, 20, 19, 22, 12, 24, 25, 26, 27, 28, 27, 30],
@@ -243,4 +252,38 @@ class Human36mDataset(MocapDataset):
             
     def supports_semi_supervised(self):
         return True
-   
+
+
+class StaticHuman36mDataset(StaticMocapDataset):
+    def __init__(self, remove_static_joints=True):
+        super().__init__(fps=50, skeleton=h36m_skeleton)
+        
+        self._cameras = copy.deepcopy(h36m_cameras_extrinsic_params)
+        for cameras in self._cameras.values():
+            for i, cam in enumerate(cameras):
+                cam.update(h36m_cameras_intrinsic_params[i])
+                for k, v in cam.items():
+                    if k not in ['id', 'res_w', 'res_h']:
+                        cam[k] = np.array(v, dtype='float32')
+                
+                # Normalize camera frame
+                cam['center'] = normalize_screen_coordinates(cam['center'], w=cam['res_w'], h=cam['res_h']).astype('float32')
+                cam['focal_length'] = cam['focal_length']/cam['res_w']*2
+                if 'translation' in cam:
+                    cam['translation'] = cam['translation']/1000 # mm to meters
+                
+                # Add intrinsic parameters vector
+                cam['intrinsic'] = np.concatenate((cam['focal_length'],
+                                                   cam['center'],
+                                                   cam['radial_distortion'],
+                                                   cam['tangential_distortion']))
+           
+        if remove_static_joints:
+            self.remove_joints([4, 5, 9, 10, 11, 16, 20, 21, 22, 23, 24, 28, 29, 30, 31])
+
+            self._skeleton._parents[11] = 8
+            self._skeleton._parents[14] = 8
+            
+    def supports_semi_supervised(self):
+        return True
+      

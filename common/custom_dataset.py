@@ -1,7 +1,7 @@
 import numpy as np
 import copy
 from common.skeleton import Skeleton
-from common.mocap_dataset import MocapDataset
+from common.mocap_dataset import MocapDataset,StaticMocapDataset
 from common.camera import normalize_screen_coordinates, image_coordinates
 from common.h36m_dataset import h36m_skeleton
        
@@ -56,4 +56,36 @@ class CustomDataset(MocapDataset):
             
     def supports_semi_supervised(self):
         return False
-   
+
+class StaticCustomDataset(StaticMocapDataset):
+    def __init__(self,detections_path,remove_static_joints=True):
+        super().__init__(fps=None, skeleton=h36m_skeleton)        
+        
+        # Load serialized dataset
+        data = np.load(detections_path, allow_pickle=True)
+        resolutions = data['metadata'].item()['video_metadata']
+        
+        self._cameras = {}
+        self._data = {}
+        for video_name, res in resolutions.items():
+            cam = {}
+            cam.update(custom_camera_params)
+            cam['orientation'] = np.array(cam['orientation'], dtype='float32')
+            cam['translation'] = np.array(cam['translation'], dtype='float32')
+            cam['translation'] = cam['translation']/1000 # mm to meters
+            
+            cam['id'] = video_name
+            cam['res_w'] = res['w']
+            cam['res_h'] = res['h']
+            
+            self._cameras[video_name] = [cam]
+        
+            self._data[video_name] = {
+                'custom': {
+                    'cameras': cam
+                }
+            }
+            
+    def supports_semi_supervised(self):
+        return False
+      
