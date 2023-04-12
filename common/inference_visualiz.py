@@ -1,6 +1,6 @@
 import argparse
 import glob
-import logging
+import logging as lg
 import numpy as np
 import os
 import re
@@ -19,7 +19,7 @@ import subprocess as sp
 from torch import from_numpy
 from tqdm import tqdm
 from common.visualization import render_animation 
-from common.h36m_dataset import StaticHuman36mDataset,h36m_metadata
+from common.h36m_dataset import StaticHuman36mDataset,h36m_metadata,static_human36m
 
 #------------------ Macro-----------------
 _SMALL_OBJECT_AREA_THRESH = 1000
@@ -164,11 +164,11 @@ def prepare_2d_dataset(input_path):
         for j in range(2):
             kp[:, i, j] = np.interp(indices, indices[mask], kp[mask, i, j])
     
-    logging.info('{} total frames processed'.format(len(bb)))
-    logging.info('{} frames were interpolated'.format(np.sum(~mask)))
-    logging.info('----------')
+    lg.info('{} total frames processed'.format(len(bb)))
+    lg.info('{} frames were interpolated'.format(np.sum(~mask)))
+    logger.info('----------')
     
-    logging.debug(kp.shape)
+    logger.debug(kp.shape)
     
     return [{
         'start_frame': 0, # Inclusive
@@ -397,20 +397,22 @@ def visualize_2d_animation(metadata,keypoints,video_path,size,output_path,fps,li
     plt.close()   
 
 def visualize_3d_animation(prediction,output_path,video_path,keypoints=None,limit=60,refine=None):
+    human_skeleton=static_human36m.skeleton()
+    
     try:
         logger
     except NameError as e:
-        logging.warning("Logger in inference_visualiz.py is not defined, use default instead")
-        logger = logging
+        logger.warning("Logger in inference_visualiz.py is not defined, use default instead")
+        logger = logger
+        logger.basicConfig(level=logger.INFO)
         
     logger.info('Rendering...')
     
     if keypoints is None:
         keypoints=prediction
         
-    anim_output=dict()
     if refine is not None:
-        anim_output['Refined Output']=refine
+        anim_output={'Refined Output':refine}
         anim_output['Raw Output']=prediction
     else:
         anim_output={"3D Output":prediction}
@@ -419,20 +421,21 @@ def visualize_3d_animation(prediction,output_path,video_path,keypoints=None,limi
         keypoints=keypoints,
         keypoints_metadata=h36m_metadata,
         poses=anim_output,
-        skeleton=StaticHuman36mDataset().skeleton(),
+        skeleton=human_skeleton,
         output=output_path,
         azim=70, # 也可以试试±110和-70
         fps=get_fps(video_path) if video_path is not None else 25,
         viewport=(prediction.shape[1],prediction.shape[2]),
         bitrate=3000,
-        downsample=2,
-        size=3,
+        # downsample=2,
+        # size=3,
         input_video_path=video_path,
         limit=limit
     )
 
 if __name__ == '__main__':
     logger=setup_logger()
+    # logger=logging
     logger.info("start")
     
     args = get_parser().parse_args()
@@ -461,8 +464,11 @@ if __name__ == '__main__':
             visualize_2d_animation(metadata=video_metadata,keypoints=data[0]['keypoints'],video_path=args.video,size=3,output_path=args.output,fps=None,
                                    limit=args.limit)
     else:
-        keypoints_npz=np.load(args.input,allow_pickle=True)
-        keypoints = keypoints_npz['raw_3d']
+        if os.path.splitext(args.input)[1]==".npz":
+            keypoints_npz=np.load(args.input,allow_pickle=True)
+            keypoints = keypoints_npz['raw_3d']
+        elif os.path.splitext(args.input)[1]==".npy":
+            keypoints = np.load(args.input,allow_pickle=True)
         if args.refine is not None:
             refine_npz=np.load(args.refine,allow_pickle=True)
             refine = refine_npz['reconstruction']

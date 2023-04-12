@@ -32,6 +32,7 @@ from common.generators import ChunkedGenerator_Seq, UnchunkedGenerator_Seq
 from time import time
 from common.utils import *
 from common.logging import Logger
+import logging
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 from common.h36m_dataset import h36m_metadata,h36m_skeleton
@@ -43,9 +44,9 @@ torch.backends.cudnn.benchmark = False
 
 # import ptvsd
 # ptvsd.enable_attach(address = ('192.168.210.130', 5678))
-# print("ptvsd start")
+# logging.debug("ptvsd start")
 # ptvsd.wait_for_attach()
-# print("start debuging")
+# logging.debug("start debuging")
 # joints_errs = []
 args = parse_args()
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -68,10 +69,10 @@ if not args.nolog:
     # logging setting
     logfile = os.path.join(args.log+'_'+TIMESTAMP, 'logging.log')
     sys.stdout = Logger(logfile)
-print(description)
-print('python ' + ' '.join(sys.argv))
-print("CUDA Device Count: ", torch.cuda.device_count())
-print(args)
+logging.debug(description)
+logging.debug('python ' + ' '.join(sys.argv))
+logging.debug("CUDA Device Count: ", torch.cuda.device_count())
+logging.debug(args)
 
 # if not assign checkpoint path, Save checkpoint file into log folder
 if args.checkpoint=='':
@@ -84,7 +85,7 @@ except OSError as e:
         raise RuntimeError('Unable to create checkpoint directory:', args.checkpoint)
 
 # dataset loading
-print('Loading dataset...')
+logging.debug('Loading dataset...')
 dataset_path = 'data/data_3d_' + args.dataset + '.npz'
 if args.dataset == 'h36m':
     from common.h36m_dataset import Human36mDataset
@@ -98,7 +99,7 @@ elif args.dataset.startswith('custom'):
 else:
     raise KeyError('Invalid dataset')
 
-print('Preparing data...')
+logging.debug('Preparing data...')
 for subject in dataset.subjects():
     for action in dataset[subject].keys():
         anim = dataset[subject][action]
@@ -111,7 +112,7 @@ for subject in dataset.subjects():
                 positions_3d.append(pos_3d)
             anim['positions_3d'] = positions_3d
 
-print('Loading 2D detections...')
+logging.debug('Loading 2D detections...')
 keypoints = np.load('data/data_2d_' + args.dataset + '_' + args.keypoints + '.npz', allow_pickle=True)
 keypoints_metadata = h36m_metadata
 keypoints_symmetry = keypoints_metadata['keypoints_symmetry']
@@ -212,13 +213,13 @@ def fetch(subjects, action_filter=None, subset=1, parse_3d_poses=True):
 
 action_filter = None if args.actions == '*' else args.actions.split(',')
 if action_filter is not None:
-    print('Selected actions:', action_filter)
+    logging.debug('Selected actions:', action_filter)
 
 cameras_valid, poses_valid, poses_valid_2d = fetch(subjects_test, action_filter)
 
 # set receptive_field as number assigned
 receptive_field = args.number_of_frames
-print('INFO: Receptive field: {} frames'.format(receptive_field))
+logging.info('INFO: Receptive field: {} frames'.format(receptive_field))
 if not args.nolog:
     writer.add_text(args.log+'_'+TIMESTAMP + '/Receptive field', str(receptive_field))
 pad = (receptive_field -1) // 2 # Padding on each side
@@ -245,7 +246,7 @@ causal_shift = 0
 model_params = 0
 for parameter in model_pos.parameters():
     model_params += parameter.numel()
-print('INFO: Trainable parameter count:', model_params/1000000, 'Million')
+logging.info('INFO: Trainable parameter count:', model_params/1000000, 'Million')
 if not args.nolog:
     writer.add_text(args.log+'_'+TIMESTAMP + '/Trainable parameter count', str(model_params/1000000) + ' Million')
 
@@ -259,9 +260,9 @@ if torch.cuda.is_available():
 if args.resume or args.evaluate:
     chk_filename = os.path.join(args.checkpoint, args.resume if args.resume else args.evaluate)
     # chk_filename = args.resume or args.evaluate
-    print('Loading checkpoint', chk_filename)
+    logging.debug('Loading checkpoint', chk_filename)
     checkpoint = torch.load(chk_filename, map_location=lambda storage, loc: storage)
-    print('This model was trained for {} epochs'.format(checkpoint['epoch']))
+    logging.debug('This model was trained for {} epochs'.format(checkpoint['epoch']))
     model_pos_train.load_state_dict(checkpoint['model_pos'], strict=False)
     model_pos.load_state_dict(checkpoint['model_pos'], strict=False)
 
@@ -269,7 +270,7 @@ if args.resume or args.evaluate:
 test_generator = UnchunkedGenerator_Seq(cameras_valid, poses_valid, poses_valid_2d,
                                     pad=pad, causal_shift=causal_shift, augment=False,
                                     kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, joints_right=joints_right)
-print('INFO: Testing on {} frames'.format(test_generator.num_frames()))
+logging.info('INFO: Testing on {} frames'.format(test_generator.num_frames()))
 if not args.nolog:
     writer.add_text(args.log+'_'+TIMESTAMP + '/Testing Frames', str(test_generator.num_frames()))
 
@@ -343,7 +344,7 @@ if not args.evaluate:
                                        kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, joints_right=joints_right)
     train_generator_eval = UnchunkedGenerator_Seq(cameras_train, poses_train, poses_train_2d,
                                               pad=pad, causal_shift=causal_shift, augment=False)
-    print('INFO: Training on {} frames'.format(train_generator_eval.num_frames()))
+    logging.info('INFO: Training on {} frames'.format(train_generator_eval.num_frames()))
     if not args.nolog:
         writer.add_text(args.log+'_'+TIMESTAMP + '/Training Frames', str(train_generator_eval.num_frames()))
 
@@ -353,12 +354,12 @@ if not args.evaluate:
             optimizer.load_state_dict(checkpoint['optimizer'])
             train_generator.set_random_state(checkpoint['random_state'])
         else:
-            print('WARNING: this checkpoint does not contain an optimizer state. The optimizer will be reinitialized.')
+            logging.debug('WARNING: this checkpoint does not contain an optimizer state. The optimizer will be reinitialized.')
         if not args.coverlr:
             lr = checkpoint['lr']
 
-    print('** Note: reported losses are averaged over all frames.')
-    print('** The final evaluation will be carried out after the last training epoch.')
+    logging.debug('** Note: reported losses are averaged over all frames.')
+    logging.debug('** The final evaluation will be carried out after the last training epoch.')
 
     # Pos model only
     while epoch < args.epochs:
@@ -492,9 +493,9 @@ if not args.evaluate:
                     predicted_3d_pos_flip[:, :, joints_left + joints_right] = predicted_3d_pos_flip[:, :,
                                                                               joints_right + joints_left]
                     for i in range(predicted_3d_pos.shape[0]):
-                        # print(predicted_3d_pos[i,0,0,0], predicted_3d_pos_flip[i,0,0,0])
+                        # logging.debug(predicted_3d_pos[i,0,0,0], predicted_3d_pos_flip[i,0,0,0])
                         predicted_3d_pos[i,:,:,:] = (predicted_3d_pos[i,:,:,:] + predicted_3d_pos_flip[i,:,:,:])/2
-                        # print(predicted_3d_pos[i,0,0,0], predicted_3d_pos_flip[i,0,0,0])
+                        # logging.debug(predicted_3d_pos[i,0,0,0], predicted_3d_pos_flip[i,0,0,0])
                     # predicted_3d_pos = torch.mean(torch.cat((predicted_3d_pos, predicted_3d_pos_flip), dim=1), dim=1, keepdim=True)
 
                     # del inputs_2d, inputs_2d_flip
@@ -560,13 +561,13 @@ if not args.evaluate:
         elapsed = (time() - start_time) / 60
 
         if args.no_eval:
-            print('[%d] time %.2f lr %f 3d_train %f' % (
+            logging.debug('[%d] time %.2f lr %f 3d_train %f' % (
                 epoch + 1,
                 elapsed,
                 lr,
                 losses_3d_train[-1] * 1000))
         else:
-            print('[%d] time %.2f lr %f 3d_train %f 3d_eval %f 3d_valid %f 3d_val_velocity %f' % (
+            logging.debug('[%d] time %.2f lr %f 3d_train %f 3d_eval %f 3d_valid %f 3d_val_velocity %f' % (
                 epoch + 1,
                 elapsed,
                 lr,
@@ -594,7 +595,7 @@ if not args.evaluate:
         # Save checkpoint if necessary
         if epoch % args.checkpoint_frequency == 0:
             chk_path = os.path.join(args.checkpoint, 'epoch_{}.bin'.format(epoch))
-            print('Saving checkpoint to', chk_path)
+            logging.info('Saving checkpoint to', chk_path)
 
             torch.save({
                 'epoch': epoch,
@@ -612,7 +613,7 @@ if not args.evaluate:
         # min_loss = 41.65
         if losses_3d_valid[-1] * 1000 < min_loss:
             min_loss = losses_3d_valid[-1] * 1000
-            print("save best checkpoint")
+            logging.debug("save best checkpoint")
             torch.save({
                 'epoch': epoch,
                 'lr': lr,
@@ -652,10 +653,10 @@ def evaluate(test_generator, action=None, return_predictions=False, use_trajecto
     epoch_loss_3d_vel = 0
     with torch.no_grad():
         if newmodel is not None:
-            print('Loading comparison model')
+            logging.debug('Loading comparison model')
             model_eval = newmodel
             chk_file_path = '/mnt/data3/home/zjl/workspace/3dpose/PoseFormer/checkpoint/train_pf_00/epoch_60.bin'
-            print('Loading evaluate checkpoint of comparison model', chk_file_path)
+            logging.debug('Loading evaluate checkpoint of comparison model', chk_file_path)
             checkpoint = torch.load(chk_file_path, map_location=lambda storage, loc: storage)
             model_eval.load_state_dict(checkpoint['model_pos'], strict=False)
             model_eval.eval()
@@ -665,12 +666,12 @@ def evaluate(test_generator, action=None, return_predictions=False, use_trajecto
                 # load best checkpoint
                 if args.evaluate == '':
                     chk_file_path = os.path.join(args.checkpoint, 'best_epoch.bin')
-                    print('Loading best checkpoint', chk_file_path)
+                    logging.debug('Loading best checkpoint', chk_file_path)
                 elif args.evaluate != '':
                     chk_file_path = os.path.join(args.checkpoint, args.evaluate)
-                    print('Loading evaluate checkpoint', chk_file_path)
+                    logging.debug('Loading evaluate checkpoint', chk_file_path)
                 checkpoint = torch.load(chk_file_path, map_location=lambda storage, loc: storage)
-                print('This model was trained for {} epochs'.format(checkpoint['epoch']))
+                logging.debug('This model was trained for {} epochs'.format(checkpoint['epoch']))
                 # model_pos_train.load_state_dict(checkpoint['model_pos'], strict=False)
                 model_eval.load_state_dict(checkpoint['model_pos'], strict=False)
                 model_eval.eval()
@@ -780,24 +781,24 @@ def evaluate(test_generator, action=None, return_predictions=False, use_trajecto
             epoch_loss_3d_vel += inputs_3d.shape[0]*inputs_3d.shape[1] * mean_velocity_error(predicted_3d_pos, inputs)
 
     if action is None:
-        print('----------')
+        logging.info('----------')
     else:
-        print('----'+action+'----')
+        logging.info('----'+action+'----')
     e1 = (epoch_loss_3d_pos / N)*1000
     e2 = (epoch_loss_3d_pos_procrustes / N)*1000
     e3 = (epoch_loss_3d_pos_scale / N)*1000
     ev = (epoch_loss_3d_vel / N)*1000
-    print('Test time augmentation:', test_generator.augment_enabled())
-    print('Protocol #1 Error (MPJPE):', e1, 'mm')
-    print('Protocol #2 Error (P-MPJPE):', e2, 'mm')
-    print('Protocol #3 Error (N-MPJPE):', e3, 'mm')
-    print('Velocity Error (MPJVE):', ev, 'mm')
-    print('----------')
+    logging.info('Test time augmentation:', test_generator.augment_enabled())
+    logging.info('Protocol #1 Error (MPJPE):', e1, 'mm')
+    logging.info('Protocol #2 Error (P-MPJPE):', e2, 'mm')
+    logging.info('Protocol #3 Error (N-MPJPE):', e3, 'mm')
+    logging.info('Velocity Error (MPJVE):', ev, 'mm')
+    logging.info('----------')
 
     return e1, e2, e3, ev
 
 if args.render:
-    print('Rendering...')
+    logging.info('Rendering...')
 
     input_keypoints = keypoints[args.viz_subject][args.viz_action][args.viz_camera].copy()
     input_keypoints,valid_frame = coco_h36m(input_keypoints)
@@ -806,9 +807,9 @@ if args.render:
         if 'positions_3d' in dataset[args.viz_subject][args.viz_action]:
             ground_truth = dataset[args.viz_subject][args.viz_action]['positions_3d'][args.viz_camera].copy()
     if ground_truth is None:
-        print('INFO: this action is unlabeled. Ground truth will not be rendered.')
+        logging.info('INFO: this action is unlabeled. Ground truth will not be rendered.')
 
-    # print(f"DEBUG: ground_truth: {ground_truth};input_keypoints: {input_keypoints}")
+    # logging.debug(f"DEBUG: ground_truth: {ground_truth};input_keypoints: {input_keypoints}")
     # gen = UnchunkedGenerator_Seq(None, [ground_truth], [input_keypoints],
     #                          pad=pad, causal_shift=causal_shift, augment=args.test_time_augmentation,
     #                          kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, joints_right=joints_right)
@@ -843,7 +844,7 @@ if args.render:
     have_ground_truth = True
     if ground_truth is None:
         have_ground_truth = False
-        print("WARNING: Use Fake ground truth")
+        logging.warning("Use Fake ground truth")
         ground_truth = np.zeros((input_keypoints.shape[0],17,3))
     
     if ground_truth.shape[0] / receptive_field > ground_truth.shape[0] // receptive_field: 
@@ -858,7 +859,7 @@ if args.render:
         prediction.reshape(ground_truth.shape[0], 17, 3)
 
     if args.viz_export is not None:
-        print('Exporting joint positions to', args.viz_export)
+        logging.info('Exporting joint positions to', args.viz_export)
         # Predictions are in camera space
         np.save(args.viz_export, prediction)
 
@@ -895,7 +896,7 @@ if args.render:
         if args.compare:
             anim_output = {'PoseFormer': prediction_pf}
             anim_output['Ours'] = prediction
-            # print(prediction_pf.shape, prediction.shape)
+            # logging.debug(prediction_pf.shape, prediction.shape)
         else:
             anim_output = {'Reconstruction': prediction}
             # anim_output = {'Reconstruction': ground_truth + np.random.normal(loc=0.0, scale=0.1, size=[ground_truth.shape[0], 17, 3])}
@@ -913,7 +914,7 @@ if args.render:
                         input_video_skip=args.viz_skip)
 
 else:
-    print('Evaluating...')
+    logging.debug('Evaluating...')
     all_actions = {}
     all_actions_by_subject = {}
     for subject in subjects_test:
@@ -984,10 +985,10 @@ else:
             errors_p3.append(e3)
             errors_vel.append(ev)
 
-        print('Protocol #1   (MPJPE) action-wise average:', round(np.mean(errors_p1), 1), 'mm')
-        print('Protocol #2 (P-MPJPE) action-wise average:', round(np.mean(errors_p2), 1), 'mm')
-        print('Protocol #3 (N-MPJPE) action-wise average:', round(np.mean(errors_p3), 1), 'mm')
-        print('Velocity      (MPJVE) action-wise average:', round(np.mean(errors_vel), 2), 'mm')
+        logging.debug('Protocol #1   (MPJPE) action-wise average:', round(np.mean(errors_p1), 1), 'mm')
+        logging.debug('Protocol #2 (P-MPJPE) action-wise average:', round(np.mean(errors_p2), 1), 'mm')
+        logging.debug('Protocol #3 (N-MPJPE) action-wise average:', round(np.mean(errors_p3), 1), 'mm')
+        logging.debug('Velocity      (MPJVE) action-wise average:', round(np.mean(errors_vel), 2), 'mm')
 
         # joints_errs_np = np.array(joints_errs_list).reshape(-1, 17)
         # joints_errs_np = np.mean(joints_errs_np, axis=0).reshape(-1)
@@ -999,8 +1000,8 @@ else:
         run_evaluation(all_actions, action_filter)
     else:
         for subject in all_actions_by_subject.keys():
-            print('Evaluating on subject', subject)
+            logging.debug('Evaluating on subject', subject)
             run_evaluation(all_actions_by_subject[subject], action_filter)
-            print('')
+            logging.debug('')
 if not args.nolog:
     writer.close()

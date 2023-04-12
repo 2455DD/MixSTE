@@ -26,16 +26,21 @@ class Skeleton:
         Remove the joints specified in 'joints_to_remove'.
         """
         valid_joints = []
+        # 将所有非要移除的关节点坐标添加进valid_joints
         for joint in range(len(self._parents)):
             if joint not in joints_to_remove:
                 valid_joints.append(joint)
 
+        # 对每一个parents中的关节点，如果第i个关节点的父节点需要被移除的话，则该关节点的父节点使用原祖父节点代替
         for i in range(len(self._parents)):
             while self._parents[i] in joints_to_remove:
                 self._parents[i] = self._parents[self._parents[i]]
                 
         index_offsets = np.zeros(len(self._parents), dtype=int)
         new_parents = []
+        # 如果第i个关节需要被移除的话，所有之后的index_array都需要+1（当前坐标偏移量）
+        # 否则新parents就需要添加一个关节点，关节点的值为
+        # 
         for i, parent in enumerate(self._parents):
             if i not in joints_to_remove:
                 new_parents.append(parent - index_offsets[parent])

@@ -244,7 +244,7 @@ class Human36mDataset(MocapDataset):
                     'cameras': self._cameras[subject],
                 }
                 
-        if remove_static_joints:
+        if remove_static_joints and len(self._skeleton._parents)==32:
             self.remove_joints([4, 5, 9, 10, 11, 16, 20, 21, 22, 23, 24, 28, 29, 30, 31])
 
             self._skeleton._parents[11] = 8
@@ -252,6 +252,7 @@ class Human36mDataset(MocapDataset):
             
     def supports_semi_supervised(self):
         return True
+
 
 
 class StaticHuman36mDataset(StaticMocapDataset):
@@ -278,7 +279,7 @@ class StaticHuman36mDataset(StaticMocapDataset):
                                                    cam['radial_distortion'],
                                                    cam['tangential_distortion']))
            
-        if remove_static_joints:
+        if remove_static_joints and len(self._skeleton._parents)==32:
             self.remove_joints([4, 5, 9, 10, 11, 16, 20, 21, 22, 23, 24, 28, 29, 30, 31])
 
             self._skeleton._parents[11] = 8
@@ -287,3 +288,4 @@ class StaticHuman36mDataset(StaticMocapDataset):
     def supports_semi_supervised(self):
         return True
       
+static_human36m = StaticHuman36mDataset()
