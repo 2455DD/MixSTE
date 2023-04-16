@@ -14,7 +14,41 @@ from common.coco_dataset import coco_h36m
 from common.custom_dataset import StaticCustomDataset
 from common.camera import camera_to_world,image_coordinates
 from common.refine_main import refine
-from common.inference_visualiz import visualize_3d_animation,prepare_2d_dataset
+from common.hpe_model import HumanTrackingModule
+from skeleton_visualize import visualize_3d_animation
+def prepare_2d_dataset(filename):
+    # Latin1 encoding because Detectron runs on Python 2.7
+    decoder = HumanTrackingModule()
+    print('Processing {}'.format(filename))
+    data = np.load(filename, encoding='latin1', allow_pickle=True)
+    bb = data['boxes']
+    kp = data['keypoints']
+    metadata = data['metadata'].item()
+    
+    kp,bb = decoder.inference(kp,bb)
+
+    # print(f"Skeletons Shape:{kp.shape}\tSkeleton[0] Shape: {kp[0].shape}")
+    kp = kp[:, :, :2] # Extract (x, y)
+    
+    # Fix missing bboxes/keypoints by linear interpolation
+    mask = ~np.isnan(bb[:, 0])
+    indices = np.arange(len(bb))
+    for i in range(4):
+        bb[:, i] = np.interp(indices, indices[mask], bb[mask, i])
+    for i in range(17):
+        for j in range(2):
+            kp[:, i, j] = np.interp(indices, indices[mask], kp[mask, i, j])
+    
+    print('{} total frames processed'.format(len(bb)))
+    print('{} frames were interpolated'.format(np.sum(~mask)))
+    print('----------')
+    
+    return [{
+        'start_frame': 0, # Inclusive
+        'end_frame': len(kp), # Exclusive
+        'bounding_boxes': bb,
+        'keypoints': kp,
+    }], metadata
 
 
 def camera_process(video_name,prediction):
@@ -51,8 +85,8 @@ def process_single_video(keypoint):
     output_keypoint=os.path.join(args.output,f"{video_name}")
     if not os.path.exists(output_keypoint+'.npy'):
         if os.path.exists(input_video):
-            output_video=os.path.join(args.video_output,f"{video_name}_raw.mp4")
-            assert not os.path.exists(output_video),f"Output Video {output_video} should be empty"
+            # output_video=os.path.join(args.video_output,f"{video_name}_raw.mp4")
+            # assert not os.path.exists(output_video),f"Output Video {output_video} should be empty"
             try:
                 check_call(["python","run.py",
                             "-d","custom",
@@ -125,27 +159,27 @@ def process_single_video(keypoint):
     
     # --------------- 可视化 --------------------------
     # NOTE: 研究如何改造当前可视化方法，
-    # output_video=os.path.join(args.video_output,f"{video_name}.mp4")
+    output_video=os.path.join(args.video_output,f"{video_name}.mp4")
     
-    # _,refined_3d_keypoint=camera_process(video_name=video_name,prediction=refined_3d_keypoint)
-    # input_keypoints,raw_3d_keypoint=camera_process(video_name=video_name,prediction=raw_3d_keypoint)
+    _,refined_3d_keypoint=camera_process(video_name=video_name,prediction=refined_3d_keypoint)
+    input_keypoints,raw_3d_keypoint=camera_process(video_name=video_name,prediction=raw_3d_keypoint)
     
-    # logging.info(f"Export comparing video to {output_video}")
-    # # visualize_3d_animation(raw_3d_keypoint,output_video,input_video,limit=args.limit if args.limit>0 and args.limit<raw_3d_keypoint.shape[0] else 50)    
-    # # visualize_3d_animation(keypoints=raw_3d_keypoint ,prediction=raw_3d_keypoint,
-    # #                        output_path=output_video,video_path=input_video,
-    # #                        limit=args.limit if args.limit>0 and args.limit<raw_3d_keypoint.shape[0] else 50,
-    # #                        refine=refined_3d_keypoint)    
-    # visualize_3d_animation(keypoints=raw_3d_keypoint ,prediction=refined_3d_keypoint,
+    logging.info(f"Export comparing video to {output_video}")
+    # visualize_3d_animation(raw_3d_keypoint,output_video,input_video,limit=args.limit if args.limit>0 and args.limit<raw_3d_keypoint.shape[0] else 50)    
+    # visualize_3d_animation(keypoints=raw_3d_keypoint ,prediction=raw_3d_keypoint,
     #                        output_path=output_video,video_path=input_video,
     #                        limit=args.limit if args.limit>0 and args.limit<raw_3d_keypoint.shape[0] else 50,
-    #                        )    
+    #                        refine=refined_3d_keypoint)    
+    visualize_3d_animation(keypoints=raw_3d_keypoint ,prediction=refined_3d_keypoint,
+                           output_path=output_video,video_path=input_video,
+                           limit=args.limit if args.limit>0 and args.limit<raw_3d_keypoint.shape[0] else 50,
+                           )    
 
 if __name__ == "__main__":
     
     parser = ArgumentParser()
     parser.add_argument('--input_video',type=str,metavar='PATH',help="input video's directory path")
-    parser.add_argument('--keypoint',type=str,metavar='PATH',help="keypoints' directory path")
+    parser.add_argument('--keypoint',type=str,metavar='PATH',help="2d keypoints' directory path")
     parser.add_argument('--dataset',type=str,default='custom')
     parser.add_argument('--video_output',type=str,metavar='PATH')
     parser.add_argument('--output',type=str,metavar='PATH')
@@ -158,7 +192,7 @@ if __name__ == "__main__":
     assert os.path.isdir(args.input_video) 
     assert os.path.isdir(args.keypoint) 
     assert args.dataset is not None
-    assert os.path.isdir(args.video_output) 
+    # assert os.path.isdir(args.video_output) 
     assert os.path.isdir(args.output) 
     
     if args.debug:
