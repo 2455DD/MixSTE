@@ -119,15 +119,23 @@ class HumanTrackingModule():
                 current_area = self.calculate_matrix_area(bb_arr[j,:4])
                 last_best_area = self.calculate_matrix_area(best_bbs[i-1])
                 differences.append(self.calculate_matrix_difference(
-                    bb_arr[j,:4],best_bbs[i-1]
-                )*0.3)
-                scores.append(bb_arr[j,4]*-0.7)
+                    bb_arr[j,:4],best_bbs[i-1]))
+                scores.append(bb_arr[j,4])
                     
-                    
-            differences = softmax(differences)
-            differences = differences + scores
-
-            best_match = np.argmin(differences)
+            differences = differences / np.linalg.norm(differences)
+            scores = scores / np.linalg.norm(scores)
+            
+            best_diff = np.argmin(differences)
+            best_scores = np.argmax(scores)
+            if best_diff == best_scores:
+                best_match = best_diff
+            else:
+                candidate_diff_skeleton = skeleton_arrays[i][1][best_diff].T.copy()
+                candidate_score_skeleton = skeleton_arrays[i][1][best_scores].T.copy()
+                if self.mpjpe(candidate_diff_skeleton,best_skeletons[i-1])>self.mpjpe(candidate_score_skeleton,best_skeletons[i-1]):
+                    best_match = best_diff
+                else:
+                    best_match = best_scores
             
             best_bb = bb_arr[best_match,:4]
             best_kp = skeleton_arrays[i][1][best_match].T.copy()
