@@ -1,6 +1,6 @@
 import numpy as np
 import random
-
+from pathlib import Path
 from datetime import datetime
 from subprocess import check_call,CalledProcessError
 import logging
@@ -164,16 +164,18 @@ def process_single_video(keypoint):
     _,refined_3d_keypoint=camera_process(video_name=video_name,prediction=refined_3d_keypoint)
     input_keypoints,raw_3d_keypoint=camera_process(video_name=video_name,prediction=raw_3d_keypoint)
     
-    logging.info(f"Export comparing video to {output_video}")
+
     # visualize_3d_animation(raw_3d_keypoint,output_video,input_video,limit=args.limit if args.limit>0 and args.limit<raw_3d_keypoint.shape[0] else 50)    
     # visualize_3d_animation(keypoints=raw_3d_keypoint ,prediction=raw_3d_keypoint,
     #                        output_path=output_video,video_path=input_video,
     #                        limit=args.limit if args.limit>0 and args.limit<raw_3d_keypoint.shape[0] else 50,
-    #                        refine=refined_3d_keypoint)    
-    visualize_3d_animation(keypoints=raw_3d_keypoint ,prediction=refined_3d_keypoint,
-                           output_path=output_video,video_path=input_video,
-                           limit=args.limit if args.limit>0 and args.limit<raw_3d_keypoint.shape[0] else 50,
-                           )    
+    #                        refine=refined_3d_keypoint)
+    if args.limit > 0:
+        logging.info(f"Export comparing video to {output_video}")    
+        visualize_3d_animation(keypoints=raw_3d_keypoint ,prediction=refined_3d_keypoint,
+                            output_path=output_video,video_path=input_video,
+                            limit=args.limit if args.limit>0 and args.limit<raw_3d_keypoint.shape[0] else 100,
+                            )    
 
 if __name__ == "__main__":
     
@@ -193,7 +195,8 @@ if __name__ == "__main__":
     assert os.path.isdir(args.keypoint) 
     assert args.dataset is not None
     # assert os.path.isdir(args.video_output) 
-    assert os.path.isdir(args.output) 
+    if not os.path.isdir(args.output):
+        Path.mkdir(Path(args.output),exist_ok=True) 
     
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)

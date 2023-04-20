@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from scipy.spatial.distance import directed_hausdorff,euclidean
+from scipy.special import softmax
 import numpy as np
 '''
     Refine2DNet: Posefix网络，就不实现了
@@ -39,13 +40,18 @@ class HumanTrackingModule():
                 to_area = euclidean(to_array[0],to_array[1])
             else:
                 return np.inf
-            return directed_hausdorff(from_array,to_array)[0]+abs(from_area-to_area)
+            # return directed_hausdorff(from_array,to_array)[0]+abs(from_area-to_area)
+            return abs(from_area-to_area)
         except IndexError as err:
             print(f'from_array:{from_array}\tShape:{from_array.shape}')
             print(f'to_array:{to_array}\tShape:{to_array.shape}')
             exit(-1)
             
-    
+    def calculate_matrix_area(self,array:np.ndarray):           
+        array = array.reshape(-1,1)
+        if(np.isnan(array).any()):
+            return 0 
+        return euclidean(array[0],array[1])
     
     def mpjpe(self,predicted, target):
         """
@@ -108,11 +114,21 @@ class HumanTrackingModule():
             # 第二帧及以后：依据上述规则
             
             differences = []
+            scores = []
             for j in range(len(bb_arr)):
+                current_area = self.calculate_matrix_area(bb_arr[j,:4])
+                last_best_area = self.calculate_matrix_area(best_bbs[i-1])
                 differences.append(self.calculate_matrix_difference(
                     bb_arr[j,:4],best_bbs[i-1]
-                ))
+                )*0.3)
+                scores.append(bb_arr[j,4]*-0.7)
+                    
+                    
+            differences = softmax(differences)
+            differences = differences + scores
+
             best_match = np.argmin(differences)
+            
             best_bb = bb_arr[best_match,:4]
             best_kp = skeleton_arrays[i][1][best_match].T.copy()
             
