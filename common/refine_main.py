@@ -34,11 +34,13 @@ def find_headPose(X2d,X,x,x2d):
     for i in range(X.shape[0]):
         kpt=X[i]
         kpt2d=X2d[i]
-        
-        
-        if physical_begin2d(kpt2d) and physical_begin(kpt) and find_bone_length(x[i]) and find_bone_length(x2d[i]):
+        #  physical_begin(kpt) and
+        # if i%10==0:
+        #     logging.info(f"Headpose(i): physical_begin: {physical_begin(kpt)};find_bone_length: {find_bone_length(x[i])};physical_begin2d: {physical_begin2d(kpt2d)};find_bone_length2d: {find_bone_length(x2d[i])}")    
+        if  find_bone_length(x[i]) and physical_begin2d(kpt2d) and find_bone_length(x2d[i]) :  
             return i 
-        
+    logging.info(f"Headpose: physical_begin2d: {physical_begin2d(kpt2d)}")    
+    logging.info(f"Headpose: physical_begin: {physical_begin(kpt)}")     
     return X.shape[0] 
 
 def copy_frame_begin(i,X):
@@ -258,8 +260,8 @@ def find_bone_length(x):
         leg_length+=x[leg[i]][leg[i]]
         
         arm_length+=x[arm[i]][arm[i]]
-    print(leg_length)
-    print(arm_length)
+    # print(leg_length)
+    # print(arm_length)
     if leg_length<arm_length:
         return False
     else:
@@ -378,12 +380,18 @@ def refine(keypoints_2d,keypoints_3d):
     Return:
         output(numpy array): 提纯后的3D关键点数据,shape=(frame,17,3)
     """
-    keypoints_3d=np.transpose(keypoints_3d, (0,2,1))#-1,3,17
-    kcs_3d_matrix=compute_KCS_matrix(keypoints_3d)
+    try:
+        keypoints_3d=np.transpose(keypoints_3d, (0,2,1))#-1,3,17
+        kcs_3d_matrix=compute_KCS_matrix(keypoints_3d)
 
-    keypoints_2d,_=coco_h36m(keypoints_2d)
-    keypoints_2d=np.transpose(keypoints_2d, (0,2,1)) #-1,2,17
-    kcs_2d_matrix=compute_KCS_matrix(keypoints_2d)
+        keypoints_2d,_=coco_h36m(keypoints_2d)
+        keypoints_2d=np.transpose(keypoints_2d, (0,2,1)) #-1,2,17
+        kcs_2d_matrix=compute_KCS_matrix(keypoints_2d)
+    except ValueError as e:
+        logging.fatal(e)
+        logging.fatal(f"Keypoints_3d shape:{keypoints_3d.shape}")
+        logging.fatal(f"Keypoints_2d shape:{keypoints_2d.shape}")
+        exit(1)
     
     #-------------1. 检测头部及身体位姿是否是正确姿态-----------------------
     begin_frame=find_headPose( keypoints_2d,keypoints_3d,kcs_3d_matrix,kcs_2d_matrix) # 人体姿态为站立姿势的第一帧

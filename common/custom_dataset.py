@@ -46,10 +46,11 @@ class CustomDataset(MocapDataset):
                 }
             }
                 
-        if remove_static_joints:
+        if remove_static_joints and len(self._skeleton._parents)==32:
             # Bring the skeleton to 17 joints instead of the original 32
             self.remove_joints([4, 5, 9, 10, 11, 16, 20, 21, 22, 23, 24, 28, 29, 30, 31])
             
+            print(f"{len(self._skeleton._parents)} {self._skeleton._parents}")
             # Rewire shoulders to the correct parents
             self._skeleton._parents[11] = 8
             self._skeleton._parents[14] = 8

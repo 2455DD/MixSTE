@@ -45,53 +45,55 @@ def process_single_video(keypoint):
     # the correct architecture/checkpoint, and the action custom (--viz-action custom). 
     # The subject is the file name of the input video, and the camera is always 0.
     input_video = os.path.join(args.input_video,video_name)
-    if os.path.exists(input_video):
-        output_keypoint=os.path.join(args.output,f"{video_name}")
-        output_video=os.path.join(args.video_output,f"{video_name}_raw.mp4")
-        assert not os.path.exists(output_video),f"Output Video {output_video} should be empty"
-        try:
-            check_call(["python","run.py",
-                        "-d","custom",
-                        "-k",f"{args.dataset}",
-                        "-c","checkpoint",
-                        "--evaluate","best_epoch.bin",
-                        "--render","--viz-subject",f"{video_name}",
-                        "--viz-action","custom",
-                        "--viz-camera","0",
-                        "--viz-output",f"{output_video}",
-                        "--viz-video",f"{input_video}",
-                        "--viz-export",f"{output_keypoint}",
-                        "--viz-limit",f"{args.limit if args.limit>1 else 50}",
-                        "--viz-downsample","2","--viz-size","3",
-                        "-g",args.gpu if args.gpu is not None else "0" 
-                        ])
-        except Exception as e:
-            print("Error occurred during execution at " + str(datetime.now().date()) + " {}".format(datetime.now().time()))
-            print(e)
-            exit(1)
-    
+    output_keypoint=os.path.join(args.output,f"{video_name}")
+    if not os.path.exists(output_keypoint+'.npy'):
+        if os.path.exists(input_video):
+            output_video=os.path.join(args.video_output,f"{video_name}_raw.mp4")
+            assert not os.path.exists(output_video),f"Output Video {output_video} should be empty"
+            try:
+                check_call(["python","run.py",
+                            "-d","custom",
+                            "-k",f"{args.dataset}",
+                            "-c","checkpoint",
+                            "--evaluate","best_epoch.bin",
+                            "--render","--viz-subject",f"{video_name}",
+                            "--viz-action","custom",
+                            "--viz-camera","0",
+                            # "--viz-output",f"{output_video}",
+                            # "--viz-video",f"{input_video}",
+                            "--viz-export",f"{output_keypoint}",
+                            # "--viz-limit",f"{args.limit if args.limit>1 else 50}",
+                            "--viz-downsample","2","--viz-size","3",
+                            "-g",args.gpu if args.gpu is not None else "0" 
+                            ])
+            except Exception as e:
+                logging.fatal("Error occurred during execution at " + str(datetime.now().date()) + " {}".format(datetime.now().time()))
+                logging.fatal(e)
+                exit(1)
+        
+        else:
+            logging.warning(f"{input_video} is not found")
+            try:
+                check_call(["python","run.py",
+                            "-d","custom",
+                            "-k",f"{args.dataset}",
+                            "-c","checkpoint",
+                            "--evaluate","best_epoch.bin",
+                            "--render","--viz-subject",f"{video_name}",
+                            "--viz-action","custom",
+                            "--viz-camera","0",
+                            "--viz-export",f"{output_keypoint}",
+                            "--viz-downsample","2","--viz-size","3",
+                            "-g",args.gpu if args.gpu is not None else "0" 
+                            ])
+            except Exception as e:
+                logging.fatal("Error occurred during execution at " + str(datetime.now().date()) + " {}".format(datetime.now().time()))
+                logging.fatal(e)
+                exit(1)
+                
+        output_keypoint_list.append(output_keypoint)
     else:
-        logging.warning(f"{input_video} is not found")
-        output_keypoint=os.path.join(args.output,f"{video_name}")
-        try:
-            check_call(["python","run.py",
-                        "-d","custom",
-                        "-k",f"{args.dataset}",
-                        "-c","checkpoint",
-                        "--evaluate","best_epoch.bin",
-                        "--render","--viz-subject",f"{video_name}",
-                        "--viz-action","custom",
-                        "--viz-camera","0",
-                        "--viz-export",f"{output_keypoint}",
-                        "--viz-downsample","2","--viz-size","3",
-                        "-g",args.gpu if args.gpu is not None else "0" 
-                        ])
-        except Exception as e:
-            print("Error occurred during execution at " + str(datetime.now().date()) + " {}".format(datetime.now().time()))
-            print(e)
-            exit(1)
-            
-    output_keypoint_list.append(output_keypoint)
+        logging.info(f"{output_keypoint} is already inferenced,skipping")
     
     # --------------- 数据提纯 -----------------------   
     # NOTE: 研究怎么调用库来做提纯，现在的方法好像是只能运行
@@ -99,29 +101,42 @@ def process_single_video(keypoint):
     raw_3d_keypoint = np.load(output_keypoint,allow_pickle=True)
     raw_2d_data,_ = prepare_2d_dataset(keypoint)
     raw_2d_keypoint = raw_2d_data[0]['keypoints']
+    logging.info("INFO: Refining keypoints")
     logging.debug(f"3d kp: {raw_3d_keypoint.shape}")
+    if len(raw_3d_keypoint.shape)>3:
+        logging.warning(f"{output_keypoint} has a shape of {raw_3d_keypoint.shape}")
+        raw_3d_keypoint=raw_3d_keypoint.reshape(raw_2d_keypoint.shape[0], 17, 3)
+        logging.warning(f"{output_keypoint} reshape to {raw_3d_keypoint.shape}")
+
     refined_3d_keypoint=refine(keypoints_2d=raw_2d_keypoint,keypoints_3d=raw_3d_keypoint)
     logging.debug(f"DEBUG:type of refined_3d_keypoint:{type(refined_3d_keypoint)}")
     # logging.debug(f"DEBUG:value of refined_3d_keypoint:{refined_3d_keypoint}")
     refined_3d_keypoint=np.asarray(refined_3d_keypoint)
     
+    refined_dir = os.path.join(args.output,"refine")
+    assert not os.path.isfile(refined_dir),f"{refined_dir} is a file"
+    os.makedirs(refined_dir,exist_ok=True)
+    refined_path = os.path.join(refined_dir,f"{video_name}")
+    logging.info(f"Exporting Refined Keypoints to {refined_path}.")
+    np.save(refined_path,refined_3d_keypoint)
+    
     # --------------- 可视化 --------------------------
     # NOTE: 研究如何改造当前可视化方法，
-    output_video=os.path.join(args.video_output,f"{video_name}.mp4")
+    # output_video=os.path.join(args.video_output,f"{video_name}.mp4")
     
-    _,refined_3d_keypoint=camera_process(video_name=video_name,prediction=refined_3d_keypoint)
-    input_keypoints,raw_3d_keypoint=camera_process(video_name=video_name,prediction=raw_3d_keypoint)
+    # _,refined_3d_keypoint=camera_process(video_name=video_name,prediction=refined_3d_keypoint)
+    # input_keypoints,raw_3d_keypoint=camera_process(video_name=video_name,prediction=raw_3d_keypoint)
     
-    logging.info(f"Export comparing video to {output_video}")
-    # visualize_3d_animation(raw_3d_keypoint,output_video,input_video,limit=args.limit if args.limit>0 and args.limit<raw_3d_keypoint.shape[0] else 50)    
-    # visualize_3d_animation(keypoints=raw_3d_keypoint ,prediction=raw_3d_keypoint,
+    # logging.info(f"Export comparing video to {output_video}")
+    # # visualize_3d_animation(raw_3d_keypoint,output_video,input_video,limit=args.limit if args.limit>0 and args.limit<raw_3d_keypoint.shape[0] else 50)    
+    # # visualize_3d_animation(keypoints=raw_3d_keypoint ,prediction=raw_3d_keypoint,
+    # #                        output_path=output_video,video_path=input_video,
+    # #                        limit=args.limit if args.limit>0 and args.limit<raw_3d_keypoint.shape[0] else 50,
+    # #                        refine=refined_3d_keypoint)    
+    # visualize_3d_animation(keypoints=raw_3d_keypoint ,prediction=refined_3d_keypoint,
     #                        output_path=output_video,video_path=input_video,
     #                        limit=args.limit if args.limit>0 and args.limit<raw_3d_keypoint.shape[0] else 50,
-    #                        refine=refined_3d_keypoint)    
-    visualize_3d_animation(keypoints=input_keypoints ,prediction=raw_3d_keypoint,
-                           output_path=output_video,video_path=input_video,
-                           limit=args.limit if args.limit>0 and args.limit<raw_3d_keypoint.shape[0] else 50,
-                           refine=refined_3d_keypoint)    
+    #                        )    
 
 if __name__ == "__main__":
     
@@ -135,7 +150,7 @@ if __name__ == "__main__":
     parser.add_argument('--limit',type=int,default=-1,help='limit frame of output video')
     parser.add_argument('--sample',type=int,default=-1,help='take certain sample from input')
     parser.add_argument('--gpu',type=str)
-
+    parser.add_argument('-r','--resume',action='store_true', help="resume the process in the certain folder")
     args = parser.parse_args()
     assert os.path.isdir(args.input_video) 
     assert os.path.isdir(args.keypoint) 
@@ -145,12 +160,29 @@ if __name__ == "__main__":
     
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
-    
+    else:
+        logging.basicConfig(level=logging.INFO)
     if args.gpu is None:
         logging.warning("No GPU is specified, use gpu 0 instead")
+
+
     
     logging.info("Start")
     keypoint_list = glob(os.path.join(args.keypoint,'*.npz'))
+   
+    if args.resume:
+        if os.path.isdir(os.path.join(args.output,'refine')):
+            resume_raw_list = glob(os.path.join(args.output,'refine')+'/*.npy')
+            logging.info(f"resume list:{resume_raw_list}")
+        else:
+            resume_raw_list = glob(args.output+'/*.npy')
+        for old_file in resume_raw_list:
+            old_file_basename = os.path.basename(old_file)
+            extract_strs=re.findall('(.*)\.npy',old_file_basename)
+            if len(extract_strs) > 0:
+                remove_path = os.path.join(args.keypoint,extract_strs[0]+'.npz')
+                print(f"Resume: skipping {remove_path}")
+                keypoint_list.remove(remove_path)
     output_keypoint_list = []
     if args.sample > 0:
         logging.info(f"Sampling {args.sample} files from {args.keypoint}(length = {len(keypoint_list)})")

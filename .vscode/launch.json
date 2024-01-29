@@ -1,0 +1,54 @@
+{
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: run.py",
+            "type": "python",
+            "request": "launch",
+            "program": "run.py",
+            "console": "integratedTerminal",
+            "args": [ "-d","custom",
+            "-k","ufs",
+            "-c","checkpoint",
+            "--evaluate","best_epoch.bin",
+            "--render","--viz-subject","0.mp4",
+            "--viz-action","custom",
+            "--viz-camera","0",
+            "--viz-output","0.mp4",
+            "--viz-export","debug_0",
+            "--viz-limit","50",
+            "--viz-downsample","2","--viz-size","3",
+            "-g","0" ],
+            "justMyCode": true
+        },
+        {
+            "name": "Python: batch estimation",
+            "type": "python",
+            "request": "launch",
+            "program": "batch_3d_estimation.py",
+            "args": [
+                "--input_video",
+                "~/data/ufs_copy/link",
+                "--keypoint",
+                "~/data/ufs_2d_detect",
+                "--dataset",
+                "ufs",
+                "--video_output",
+                "~/data/ufs_3d_viz",
+                "--output",
+                "~/data/ufs_3d_detect",
+                "--limit",
+                "1000",
+                "--sample",
+                "1",
+                "--gpu",
+                "1,2"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+    ]
+}
